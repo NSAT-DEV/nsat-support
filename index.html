@@ -131,6 +131,18 @@ details.q[open] summary{color:var(--speed)}
 .btn{display:inline-block;font-family:var(--disp);font-weight:600;font-size:16px;letter-spacing:.1em;text-transform:uppercase;padding:12px 22px;border-radius:10px;border:1px solid var(--hairline);color:var(--ink);margin-left:auto}
 .btn:hover{border-color:var(--dim);text-decoration:none}
 
+/* rendered user guide */
+.md-body{margin-top:24px;background:var(--card);border:1px solid var(--hairline);border-radius:14px;padding:32px 34px}
+.md-body h1{font-family:var(--disp);font-weight:700;font-size:32px;color:var(--brand-red);line-height:1.1}
+.md-body h2{font-family:var(--disp);font-weight:700;font-size:24px;color:var(--course);margin-top:28px}
+.md-body h3{font-family:var(--disp);font-weight:600;font-size:19px;color:var(--speed);margin-top:20px}
+.md-body p{margin-top:12px;color:var(--dim);font-size:15.5px}
+.md-body b{color:var(--ink);font-weight:600}
+.md-body code{font-family:var(--mono);font-size:13.5px;color:var(--target)}
+.md-body ul,.md-body ol{margin:12px 0 0 22px;color:var(--dim);font-size:15.5px}
+.md-body li{margin:6px 0}
+.md-body hr{border:none;border-top:1px solid var(--hairline);margin:26px 0}
+
 footer{padding:40px 0 60px}
 footer .wrap{display:flex;gap:20px;align-items:baseline;flex-wrap:wrap}
 footer p{color:var(--faint);font-size:14px;max-width:64ch}
@@ -147,6 +159,7 @@ footer .sig b{color:var(--fast);font-weight:300}
   .topnav{display:none}
   details.q summary{font-size:18px}
   .spec td:first-child{width:42%}
+  .md-body{padding:22px 20px}
 }
 @media (prefers-reduced-motion:reduce){ html{scroll-behavior:auto} .tri{transition:none} }
 </style>
@@ -556,8 +569,9 @@ footer .sig b{color:var(--fast);font-weight:300}
       the dashboard, the three ways a run can end, chasing zero across legs, and
       troubleshooting. It's built into the app under the book icon — where you
       can also print it or email yourself a copy — and it's here as well.</p>
-      <a class="btn" href="NSAT-User-Guide.md">Read the guide</a>
+      <a class="btn" href="NSAT-User-Guide.md" id="guideBtn">Read the guide</a>
     </div>
+    <div class="md-body" id="guideBox" hidden></div>
   </div>
 </section>
 
@@ -658,6 +672,80 @@ footer .sig b{color:var(--fast);font-weight:300}
       if(d.open && d.id) history.replaceState(null, "", "#" + d.id);
     });
   });
+})();
+</script>
+
+<script>
+(function(){
+  "use strict";
+  // Fetch NSAT-User-Guide.md from this site and render it in the page's own
+  // styling. The button's href is the real file, so with JavaScript off — or
+  // if the fetch fails — the visitor still reaches the markdown directly.
+  var btn = document.getElementById("guideBtn");
+  var box = document.getElementById("guideBox");
+  if(!btn || !box) return;
+  var GUIDE = "NSAT-User-Guide.md";
+  var loaded = false;
+
+  btn.addEventListener("click", function(e){
+    e.preventDefault();
+    if(loaded){
+      box.hidden = !box.hidden;
+      btn.textContent = box.hidden ? "Read the guide" : "Hide the guide";
+      if(!box.hidden) box.scrollIntoView({block:"start"});
+      return;
+    }
+    btn.textContent = "Loading…";
+    fetch(GUIDE)
+      .then(function(r){ if(!r.ok) throw new Error(r.status); return r.text(); })
+      .then(function(md){
+        box.innerHTML = mdToHtml(md);
+        box.hidden = false; loaded = true;
+        btn.textContent = "Hide the guide";
+        box.scrollIntoView({block:"start"});
+      })
+      .catch(function(){
+        btn.textContent = "Read the guide";
+        box.innerHTML = '<p>The guide didn\'t load here. ' +
+          '<a href="' + GUIDE + '">Open the file directly</a>.</p>';
+        box.hidden = false;
+      });
+  });
+
+  function esc(s){
+    return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  }
+  function inline(s){
+    return esc(s)
+      .replace(/`([^`]+)`/g, "<code>$1</code>")
+      .replace(/\*\*(.+?)\*\*/g, "<b>$1</b>")
+      .replace(/(^|[^*])\*([^*]+)\*/g, "$1<em>$2</em>");
+  }
+  function mdToHtml(md){
+    var out = "", list = null;
+    function closeList(){ if(list){ out += "</" + list + ">\n"; list = null; } }
+    md.split(/\r?\n/).forEach(function(raw){
+      var line = raw.trim();
+      if(!line){ closeList(); return; }
+      if(line === "---"){ closeList(); out += "<hr>\n"; return; }
+      if(line.indexOf("### ") === 0){ closeList(); out += "<h3>" + inline(line.slice(4)) + "</h3>\n"; return; }
+      if(line.indexOf("## ")  === 0){ closeList(); out += "<h2>" + inline(line.slice(3)) + "</h2>\n"; return; }
+      if(line.indexOf("# ")   === 0){ closeList(); out += "<h1>" + inline(line.slice(2)) + "</h1>\n"; return; }
+      if(line.indexOf("- ")   === 0){
+        if(list !== "ul"){ closeList(); out += "<ul>\n"; list = "ul"; }
+        out += "<li>" + inline(line.slice(2)) + "</li>\n"; return;
+      }
+      var m = line.match(/^(\d+)\.\s+(.*)$/);
+      if(m){
+        if(list !== "ol"){ closeList(); out += "<ol>\n"; list = "ol"; }
+        out += "<li>" + inline(m[2]) + "</li>\n"; return;
+      }
+      closeList();
+      out += "<p>" + inline(line) + "</p>\n";
+    });
+    closeList();
+    return out;
+  }
 })();
 </script>
 </body>
