@@ -1,0 +1,522 @@
+nsat-dev@pm.me<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NSAT — Neal's Sorta Accurate Timer</title>
+<meta name="description" content="NSAT is an iOS timing app for open-road time-speed-distance racing. It pairs with a RaceBox GPS receiver, starts itself at a scheduled GPS-synchronized time, and stops the instant your nose crosses the finish line.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500&family=JetBrains+Mono:wght@100;200;300;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --track:#000000;        /* page background — the app's own chrome        */
+  --card:#191919;         /* card surface (app: white 0.1)                 */
+  --hairline:#2c2c2c;
+  --ink:#f2f2f2;
+  --dim:#8f8f8f;
+  --faint:#5a5a5a;
+  --brand-red:#ff453a;    /* wordmark initials                             */
+  --brand-blue:#3d97ff;   /* wordmark body                                 */
+  --speed:#64d2ff;        /* cyan — current speed / distance               */
+  --target:#ff9f0a;       /* orange — target & start-time controls         */
+  --course:#ffd60a;       /* yellow — course & finish line                 */
+  --offset:#40c8e0;       /* teal — GPS offset                             */
+  --log:#66d4cf;          /* mint — run log                                */
+  --fast:#30d158;         /* green — ahead of pace                         */
+  --slow:#ff453a;         /* red — behind pace                             */
+  --plan:#7d7aff;         /* indigo — variance offset                      */
+  --disp:"Barlow Condensed",sans-serif;
+  --body:"Barlow",sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--track);color:var(--ink);font-family:var(--body);font-size:17px;line-height:1.6;-webkit-font-smoothing:antialiased}
+a{color:var(--speed);text-decoration:none}
+a:hover{text-decoration:underline}
+:focus-visible{outline:2px solid var(--target);outline-offset:3px;border-radius:2px}
+.wrap{max-width:1080px;margin:0 auto;padding:0 24px}
+
+/* ── top bar ─────────────────────────────────────────── */
+.topbar{position:sticky;top:0;z-index:10;background:rgba(0,0,0,.88);backdrop-filter:blur(8px);border-bottom:1px solid var(--hairline)}
+.topbar .wrap{display:flex;align-items:baseline;gap:28px;padding-top:14px;padding-bottom:14px}
+.mark{font-family:var(--disp);font-weight:700;font-size:22px;letter-spacing:.12em}
+.mark b{color:var(--brand-red);font-weight:700}
+.mark span{color:var(--brand-blue)}
+.topnav{margin-left:auto;display:flex;gap:22px;font-family:var(--disp);font-weight:600;font-size:15px;letter-spacing:.14em;text-transform:uppercase}
+.topnav a{color:var(--dim)}
+.topnav a:hover{color:var(--ink);text-decoration:none}
+
+/* ── hero ────────────────────────────────────────────── */
+.hero{padding:72px 0 64px;border-bottom:1px solid var(--hairline)}
+.hero .wrap{display:grid;grid-template-columns:1.05fr .95fr;gap:56px;align-items:center}
+.stair{font-family:var(--disp);font-weight:700;font-size:clamp(40px,6vw,64px);line-height:1.04;text-transform:none}
+.stair div b{color:var(--brand-red)}
+.stair div span{color:var(--brand-blue)}
+.stair div:nth-child(2){padding-left:.9em}
+.stair div:nth-child(3){padding-left:1.8em}
+.stair div:nth-child(4){padding-left:2.7em}
+.tagline{margin-top:22px;font-family:var(--disp);font-weight:600;font-size:22px;letter-spacing:.04em;color:var(--target)}
+.hero p.lede{margin-top:14px;max-width:46ch;color:var(--dim)}
+.ctas{margin-top:30px;display:flex;gap:14px;flex-wrap:wrap}
+.btn{display:inline-block;font-family:var(--disp);font-weight:600;font-size:16px;letter-spacing:.1em;text-transform:uppercase;padding:12px 22px;border-radius:10px;border:1px solid var(--hairline)}
+.btn:hover{text-decoration:none}
+.btn.primary{background:var(--brand-blue);border-color:var(--brand-blue);color:#fff}
+.btn.primary:hover{filter:brightness(1.12)}
+.btn.ghost{color:var(--ink)}
+.btn.ghost:hover{border-color:var(--dim)}
+
+/* ── live instrument (signature) ─────────────────────── */
+.instrument{background:var(--card);border:1px solid var(--hairline);border-radius:16px;padding:26px 26px 20px;box-shadow:0 24px 60px rgba(0,0,0,.55)}
+.inst-label{font-family:var(--disp);font-weight:600;font-size:13px;letter-spacing:.28em;color:var(--dim);text-transform:uppercase;text-align:center}
+.inst-value{font-family:var(--mono);font-weight:100;text-align:center;font-variant-numeric:tabular-nums}
+.inst-row{padding:10px 0;border-bottom:1px solid #262626}
+.inst-row:last-of-type{border-bottom:none}
+#gpsTime{font-size:44px;color:var(--ink)}
+#startTime{font-size:44px;color:var(--brand-blue)}
+#countdown{font-size:34px;font-weight:200;color:var(--target)}
+#elapsed{font-size:46px;color:var(--ink)}
+.vs{font-family:var(--disp);font-weight:600;font-size:12px;letter-spacing:.24em;color:var(--dim);text-transform:uppercase;text-align:center;margin-top:2px}
+#variance{font-size:30px;font-weight:200}
+#variance.fast{color:var(--fast)}
+#variance.slow{color:var(--slow)}
+#recRow .inst-label{color:var(--dim)}
+#recSpeed{font-size:30px;font-weight:200;color:var(--fast)}
+#recSpeed .unit{font-size:16px;color:var(--dim);font-weight:300}
+.inst-note{margin-top:14px;font-size:12px;color:var(--faint);text-align:center}
+.state-flag{font-family:var(--disp);font-weight:700;letter-spacing:.3em;font-size:13px;text-transform:uppercase;text-align:center;margin-bottom:10px}
+.state-flag.idle{color:var(--dim)}
+.state-flag.running{color:var(--fast)}
+.state-flag.done{color:var(--course)}
+
+/* ── sections ────────────────────────────────────────── */
+section{padding:72px 0;border-bottom:1px solid var(--hairline)}
+.eyebrow{font-family:var(--disp);font-weight:600;font-size:14px;letter-spacing:.3em;text-transform:uppercase;color:var(--dim)}
+h2{font-family:var(--disp);font-weight:700;font-size:clamp(30px,4vw,42px);line-height:1.1;margin-top:10px}
+.section-lede{margin-top:14px;max-width:62ch;color:var(--dim)}
+
+/* big idea */
+.idea-grid{margin-top:44px;display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+.idea{background:var(--card);border:1px solid var(--hairline);border-radius:14px;padding:24px}
+.idea h3{font-family:var(--disp);font-weight:600;font-size:21px;letter-spacing:.04em}
+.idea p{margin-top:10px;font-size:15.5px;color:var(--dim)}
+.idea .k{font-family:var(--mono);font-weight:300;font-size:13px;letter-spacing:.08em;display:inline-block;margin-bottom:12px;padding:3px 10px;border-radius:6px;border:1px solid var(--hairline)}
+.idea:nth-child(1) .k{color:var(--target)}
+.idea:nth-child(2) .k{color:var(--course)}
+.idea:nth-child(3) .k{color:var(--fast)}
+
+/* feature cards — modeled on the app's MetricCards */
+.feat-grid{margin-top:44px;display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+.feat{background:var(--card);border:1px solid var(--hairline);border-radius:14px;padding:22px;border-top:3px solid var(--hairline)}
+.feat .cap{font-family:var(--disp);font-weight:600;font-size:13px;letter-spacing:.26em;text-transform:uppercase}
+.feat h3{font-family:var(--disp);font-weight:600;font-size:22px;margin-top:8px;letter-spacing:.02em}
+.feat p{margin-top:8px;font-size:15px;color:var(--dim)}
+.feat.c-speed{border-top-color:var(--speed)}   .feat.c-speed .cap{color:var(--speed)}
+.feat.c-fast{border-top-color:var(--fast)}     .feat.c-fast .cap{color:var(--fast)}
+.feat.c-plan{border-top-color:var(--plan)}     .feat.c-plan .cap{color:var(--plan)}
+.feat.c-target{border-top-color:var(--target)} .feat.c-target .cap{color:var(--target)}
+.feat.c-offset{border-top-color:var(--offset)} .feat.c-offset .cap{color:var(--offset)}
+.feat.c-log{border-top-color:var(--log)}       .feat.c-log .cap{color:var(--log)}
+
+/* run timeline — a course with mile markers (truly sequential content) */
+.course{margin-top:52px;position:relative;padding-left:34px}
+.course::before{content:"";position:absolute;left:10px;top:6px;bottom:6px;width:2px;background:repeating-linear-gradient(to bottom,var(--course) 0 14px,transparent 14px 26px)}
+.stage{position:relative;padding:0 0 34px 14px}
+.stage:last-child{padding-bottom:0}
+.stage::before{content:"";position:absolute;left:-30px;top:6px;width:14px;height:14px;border-radius:50%;background:var(--track);border:3px solid var(--course)}
+.stage .mm{font-family:var(--mono);font-weight:300;font-size:13px;color:var(--course);letter-spacing:.08em}
+.stage h3{font-family:var(--disp);font-weight:600;font-size:22px;margin-top:2px}
+.stage p{margin-top:6px;max-width:68ch;font-size:15.5px;color:var(--dim)}
+.stage:last-child::before{border-color:var(--fast);background:var(--fast)}
+
+/* build */
+.buildcols{margin-top:40px;display:grid;grid-template-columns:1fr 1fr;gap:26px;align-items:start}
+.reqs{background:var(--card);border:1px solid var(--hairline);border-radius:14px;padding:24px}
+.reqs h3{font-family:var(--disp);font-weight:600;font-size:20px;letter-spacing:.04em}
+.reqs ul{margin-top:12px;list-style:none}
+.reqs li{padding:8px 0;border-bottom:1px solid #242424;font-size:15.5px;color:var(--dim)}
+.reqs li:last-child{border-bottom:none}
+.reqs li b{color:var(--ink);font-weight:500}
+pre{background:#0d0d0d;border:1px solid var(--hairline);border-radius:14px;padding:22px;overflow-x:auto;font-family:var(--mono);font-weight:300;font-size:13.5px;line-height:1.7;color:#cfcfcf}
+pre .c{color:var(--faint)}
+pre .k{color:var(--target)}
+pre .v{color:var(--speed)}
+
+/* guide */
+.guide-card{margin-top:40px;background:var(--card);border:1px solid var(--hairline);border-radius:14px;padding:28px;display:flex;gap:24px;align-items:center;flex-wrap:wrap}
+.guide-card p{color:var(--dim);max-width:56ch;font-size:15.5px}
+.guide-card .btn{margin-left:auto}
+
+/* footer */
+footer{padding:44px 0 64px}
+footer .wrap{display:flex;gap:20px;align-items:baseline;flex-wrap:wrap}
+footer p{color:var(--faint);font-size:14px}
+footer .sig{font-family:var(--mono);font-weight:300;font-size:13px;color:var(--dim);margin-left:auto}
+footer .sig b{color:var(--fast);font-weight:300}
+
+@media (max-width:860px){
+  .hero .wrap{grid-template-columns:1fr;gap:44px}
+  .idea-grid,.feat-grid{grid-template-columns:1fr 1fr}
+  .buildcols{grid-template-columns:1fr}
+}
+@media (max-width:560px){
+  .idea-grid,.feat-grid{grid-template-columns:1fr}
+  .topnav{display:none}
+  #gpsTime,#startTime,#elapsed{font-size:36px}
+}
+@media (prefers-reduced-motion:reduce){
+  html{scroll-behavior:auto}
+}
+</style>
+</head>
+<body>
+
+<nav class="topbar" aria-label="Site">
+  <div class="wrap">
+    <div class="mark"><b>N</b><span>SAT</span></div>
+    <div class="topnav">
+      <a href="#idea">The idea</a>
+      <a href="#features">Features</a>
+      <a href="#run">A run</a>
+      <a href="#build">Build it</a>
+      <a href="#guide">Guide</a>
+    </div>
+  </div>
+</nav>
+
+<header class="hero">
+  <div class="wrap">
+    <div>
+      <h1 class="stair" aria-label="Neal's Sorta Accurate Timer">
+        <div><b>N</b><span>eal's</span></div>
+        <div><b>S</b><span>orta</span></div>
+        <div><b>A</b><span>ccurate</span></div>
+        <div><b>T</b><span>imer</span></div>
+      </h1>
+      <p class="tagline">Sorta accurate. To the millisecond.</p>
+      <p class="lede">NSAT is an iOS timing app for open-road time-speed-distance
+      racing — Silver State Classic, NORC, Big Bend. It pairs with a RaceBox GPS
+      receiver, starts the clock by itself at your assigned GPS-synchronized start
+      time, and stops it the instant the front of your car crosses the finish line.
+      Your score is one number: variance from perfect.</p>
+      <div class="ctas">
+        <a class="btn primary" href="https://github.com/USERNAME/NSAT">View on GitHub</a>
+        <a class="btn ghost" href="#guide">Read the user guide</a>
+      </div>
+    </div>
+
+    <div class="instrument" aria-label="Live demonstration of the NSAT start sequence">
+      <div id="stateFlag" class="state-flag idle">Awaiting start</div>
+
+      <div class="inst-row" id="rowGps">
+        <div class="inst-label">GPS Time · UTC</div>
+        <div class="inst-value" id="gpsTime">--:--:--</div>
+      </div>
+
+      <div class="inst-row" id="rowStart">
+        <div class="inst-label">Start Time</div>
+        <div class="inst-value" id="startTime">--:--</div>
+      </div>
+
+      <div class="inst-row" id="rowCountdown">
+        <div class="inst-label">Countdown</div>
+        <div class="inst-value" id="countdown">--:--</div>
+      </div>
+
+      <div class="inst-row" id="rowElapsed" hidden>
+        <div class="inst-label">Elapsed Time</div>
+        <div class="inst-value" id="elapsed">0:00.0</div>
+        <div class="vs">vs target</div>
+        <div class="inst-value fast" id="variance">−0.00 s</div>
+      </div>
+
+      <div class="inst-row" id="recRow" hidden>
+        <div class="inst-label">Rec Speed</div>
+        <div class="inst-value" id="recSpeed">--</div>
+      </div>
+
+      <p class="inst-note">Live demo on compressed time — in the app, the start
+      is your event-assigned time and there is no start button to press.</p>
+    </div>
+  </div>
+</header>
+
+<section id="idea">
+  <div class="wrap">
+    <p class="eyebrow">The big idea</p>
+    <h2>The clock doesn't wait for you</h2>
+    <p class="section-lede">Open-road racing is scored against time, not against
+    other cars on the road. NSAT is built around the three facts of that format.</p>
+    <div class="idea-grid">
+      <div class="idea">
+        <span class="k">T-0 · UTC</span>
+        <h3>No start button</h3>
+        <p>You set a start time, synchronized to GPS atomic time. When the
+        satellite clock reaches it, the timer starts on its own — interpolated
+        between GPS packets, finer than the receiver's update rate.</p>
+      </div>
+      <div class="idea">
+        <span class="k">38.433711°</span>
+        <h3>A line on the map</h3>
+        <p>The finish is a coordinate, not a button press. When your position
+        crosses the finish latitude or longitude in the course's direction of
+        travel, the timer stops — offset so it's your nose, not your antenna.</p>
+      </div>
+      <div class="idea">
+        <span class="k">−00.31 s</span>
+        <h3>One number that matters</h3>
+        <p>Course distance ÷ target speed = a perfect time. Everything on screen
+        exists to drive your variance from that time to zero at the line.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="features">
+  <div class="wrap">
+    <p class="eyebrow">In the cockpit</p>
+    <h2>Built for one glance at speed</h2>
+    <p class="section-lede">Black screen, maximum brightness, thin monospaced
+    digits — readable in desert sun. Every card on this page borrows its color
+    from the instrument it describes.</p>
+    <div class="feat-grid">
+      <div class="feat c-fast">
+        <div class="cap">Rec Speed</div>
+        <h3>Your corrective pace</h3>
+        <p>The average speed that brings variance to exactly zero at the line —
+        live, from mile 5 until the final minute of the run.</p>
+      </div>
+      <div class="feat c-plan">
+        <div class="cap">Variance Offset</div>
+        <h3>Chase zero across legs</h3>
+        <p>Finished leg one 12 seconds slow? Flip one toggle and leg two paces
+        you 12 seconds fast, so the two legs net out. Logs still score true.</p>
+      </div>
+      <div class="feat c-target">
+        <div class="cap">Dead Reckoning</div>
+        <h3>Finishes in the shadows</h3>
+        <p>Lose GPS in an underpass near the line and the app projects your last
+        known speed to the finish — recorded, and clearly marked as estimated.</p>
+      </div>
+      <div class="feat c-offset">
+        <div class="cap">GPS Offset</div>
+        <h3>Timed at the nose</h3>
+        <p>Tell it how far the antenna sits behind the front of the car (0–22 ft)
+        and the finish threshold shifts to match. The car finishes, not the puck.</p>
+      </div>
+      <div class="feat c-speed">
+        <div class="cap">Precision Timing</div>
+        <h3>Between the packets</h3>
+        <p>Start and finish are interpolated inside the GPS packet interval, with
+        distance blended to the surveyed finish coordinate over the final miles.</p>
+      </div>
+      <div class="feat c-log">
+        <div class="cap">Run Log</div>
+        <h3>Every run, on paper</h3>
+        <p>Course, coordinates, speeds, times, variance, finish type — saved
+        automatically and exportable as CSV straight into the Files app.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="run">
+  <div class="wrap">
+    <p class="eyebrow">A run, start to finish</p>
+    <h2>Ninety miles in six moments</h2>
+    <div class="course">
+      <div class="stage">
+        <div class="mm">STAGING</div>
+        <h3>Sync</h3>
+        <p>Connect the RaceBox and wait for race quality: full 3D fix, horizontal
+        accuracy under one meter, nanosecond time resolved. The app won't arm
+        until all four lights are green.</p>
+      </div>
+      <div class="stage">
+        <div class="mm">START LINE</div>
+        <h3>Set up</h3>
+        <p>Pick the course leg, set target speed, confirm the GPS offset, decide
+        on the variance offset — then dial in the assigned start time last, in
+        30-second clicks.</p>
+      </div>
+      <div class="stage">
+        <div class="mm">MILE 0.0</div>
+        <h3>T-0</h3>
+        <p>The GPS clock reaches the start time and the timer is running. The
+        display reorganizes: elapsed time, live variance, distance in the title
+        bar. Drive.</p>
+      </div>
+      <div class="stage">
+        <div class="mm">MILE 5+</div>
+        <h3>In the run</h3>
+        <p>Green means ahead, red means behind. REC SPEED tells you the exact
+        average to hold from here to arrive at zero.</p>
+      </div>
+      <div class="stage">
+        <div class="mm">FINAL MILE</div>
+        <h3>The line</h3>
+        <p>The finish card goes red at one mile out. The crossing is detected on
+        the course's axis, interpolated between packets, and corrected for the
+        car's nose.</p>
+      </div>
+      <div class="stage">
+        <div class="mm">SCORED</div>
+        <h3>Results</h3>
+        <p>Final time, perfect time, variance to the millisecond, average and
+        top speed — on screen, in the log, and in the CSV.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="build">
+  <div class="wrap">
+    <p class="eyebrow">Build it</p>
+    <h2>One Swift file, your Xcode</h2>
+    <p class="section-lede">NSAT ships as a single SwiftUI source file. Clone the
+    repo, drop it into a fresh iOS app project, add three keys, and run it on
+    your phone.</p>
+    <div class="buildcols">
+      <div class="reqs">
+        <h3>You'll need</h3>
+        <ul>
+          <li><b>iPhone or iPad</b> · iOS 16 or later</li>
+          <li><b>RaceBox</b> · Mini, Mini S, or Micro</li>
+          <li><b>Xcode</b> · new iOS App project, SwiftUI</li>
+          <li><b>A charger</b> · the screen runs at full brightness</li>
+        </ul>
+      </div>
+      <pre><span class="c">// 1. New Xcode project → iOS App, SwiftUI, iOS 16+</span>
+<span class="c">// 2. Replace ContentView.swift with NSAT.swift</span>
+<span class="c">// 3. Add to Info.plist:</span>
+
+<span class="k">NSBluetoothAlwaysUsageDescription</span>
+  → <span class="v">"Required to connect to RaceBox Mini GPS"</span>
+<span class="k">NSLocationWhenInUseUsageDescription</span>
+  → <span class="v">"Required for GPS data display"</span>
+<span class="k">UIFileSharingEnabled</span>              → <span class="v">YES</span>
+<span class="k">LSSupportsOpeningDocumentsInPlace</span>  → <span class="v">YES</span></pre>
+    </div>
+  </div>
+</section>
+
+<section id="guide">
+  <div class="wrap">
+    <p class="eyebrow">Documentation</p>
+    <h2>The user guide travels with the app</h2>
+    <div class="guide-card">
+      <p>The full guide — setup, the automatic start, in-run displays, the three
+      finish types, chasing zero across legs, and troubleshooting — is embedded
+      in the app itself (the book icon), printable and emailable from inside it,
+      and kept in this repository as markdown.</p>
+      <a class="btn ghost" href="https://github.com/USERNAME/NSAT/blob/main/NSAT-User-Guide.md">Read NSAT-User-Guide.md</a>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <p>NSAT · RaceBox BLE GPS timing for open-road racing. Race within your
+    event's rules — and keep your eyes on the road, not the phone.</p>
+    <p class="sig">variance <b>−00.000 s</b></p>
+  </div>
+</footer>
+
+<script>
+(function(){
+  "use strict";
+  // ── Live start-line instrument ─────────────────────────────────────────
+  // A compressed-time recreation of the app's core behavior: the timer arms
+  // itself against the UTC clock, runs, and scores — no start button.
+  var flag      = document.getElementById("stateFlag");
+  var gpsEl     = document.getElementById("gpsTime");
+  var startEl   = document.getElementById("startTime");
+  var cdRow     = document.getElementById("rowCountdown");
+  var cdEl      = document.getElementById("countdown");
+  var startRow  = document.getElementById("rowStart");
+  var elRow     = document.getElementById("rowElapsed");
+  var elEl      = document.getElementById("elapsed");
+  var varEl     = document.getElementById("variance");
+  var recRow    = document.getElementById("recRow");
+  var recEl     = document.getElementById("recSpeed");
+
+  var IDLE_LEAD_S = 22;     // demo countdown length
+  var RUN_S       = 40;     // demo run length before "finish"
+  var HOLD_S      = 7;      // results hold before re-arming
+
+  var state, startAt, finishAt, resetAt, phase;
+
+  function pad(n){ return (n<10?"0":"")+n; }
+  function utcClock(d){
+    return pad(d.getUTCHours())+":"+pad(d.getUTCMinutes())+":"+pad(d.getUTCSeconds());
+  }
+  function mmss(totalS){
+    totalS = Math.max(0, totalS);
+    return Math.floor(totalS/60)+":"+pad(Math.floor(totalS%60));
+  }
+
+  function arm(){
+    var now = Date.now();
+    startAt  = now + IDLE_LEAD_S*1000;
+    finishAt = startAt + RUN_S*1000;
+    resetAt  = finishAt + HOLD_S*1000;
+    phase = "idle";
+    var sd = new Date(startAt);
+    startEl.textContent = pad(sd.getUTCMinutes())+":"+pad(sd.getUTCSeconds());
+    flag.textContent = "Awaiting start"; flag.className = "state-flag idle";
+    startRow.hidden = false; cdRow.hidden = false;
+    elRow.hidden = true; recRow.hidden = true;
+  }
+
+  // A gentle deterministic drift for the demo variance, ending near zero.
+  function demoVariance(tRun){
+    var x = tRun / RUN_S;                       // 0 → 1 through the run
+    return 2.4*Math.sin(x*5.1) * (1 - x*x);     // seconds, fades to ~0
+  }
+
+  function tick(){
+    var now = Date.now();
+    gpsEl.textContent = utcClock(new Date(now));
+
+    if (phase === "idle"){
+      cdEl.textContent = mmss(Math.ceil((startAt - now)/1000));
+      if (now >= startAt){
+        phase = "running";
+        flag.textContent = "Running"; flag.className = "state-flag running";
+        startRow.hidden = true; cdRow.hidden = true; elRow.hidden = false;
+      }
+    }
+    if (phase === "running"){
+      var tRun = (now - startAt)/1000;
+      var m = Math.floor(tRun/60), s = tRun - m*60;
+      elEl.textContent = m+":"+(s<10?"0":"")+s.toFixed(1);
+
+      var v = demoVariance(tRun);
+      var ahead = v <= 0;
+      varEl.textContent = (ahead?"−":"+")+Math.abs(v).toFixed(2)+" s";
+      varEl.className = "inst-value "+(ahead?"fast":"slow");
+
+      if (tRun > 6){                            // REC SPEED, demo-compressed
+        recRow.hidden = false;
+        var rec = 142.0 - v*1.8;
+        recEl.innerHTML = rec.toFixed(1)+' <span class="unit">mph</span>';
+      }
+      if (now >= finishAt){
+        phase = "done";
+        flag.textContent = "Course complete"; flag.className = "state-flag done";
+        varEl.textContent = "−0.31 s";
+        varEl.className = "inst-value fast";
+        recRow.hidden = true;
+      }
+    }
+    if (phase === "done" && now >= resetAt){ arm(); }
+  }
+
+  arm();
+  tick();
+  setInterval(tick, 100);
+})();
+</script>
+</body>
+</html>
